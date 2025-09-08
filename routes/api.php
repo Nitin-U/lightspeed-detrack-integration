@@ -15,5 +15,6 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::post('/lightspeed/sale-completed', [ManageDetrackJobs::class, 'handleSaleCompleted']);
+Route::post('/lightspeed/sale-updated', [ManageDetrackJobs::class, 'handleSaleUpdated']);
 
 //https://3248c5bc1129.ngrok-free.app/api/lightspeed/sale-completed
