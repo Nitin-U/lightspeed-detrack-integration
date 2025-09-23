@@ -103,9 +103,7 @@ class LightspeedApiService {
      */
     public function fetchSalesDetails($saleId): mixed
     {
-        $response = Http::withOptions([
-        'verify' => false,
-    ])->withHeaders([
+        $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . env('LIGHTSPEED_ACCESS_TOKEN'),
         ])->get("https://nicebackyard.retail.lightspeed.app/api/2.0/sales/{$saleId}?expand=line_items,product");
 
@@ -138,9 +136,7 @@ class LightspeedApiService {
 
     public function fetchCustomerDetails($customerId)
     {
-        $response = Http::withOptions([
-        'verify' => false,
-    ])->withHeaders([
+        $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . env('LIGHTSPEED_ACCESS_TOKEN'),
         ])->get("https://nicebackyard.retail.lightspeed.app/api/2.0/customers/{$customerId}?expand=addresses,phones");
 
@@ -159,8 +155,7 @@ class LightspeedApiService {
     protected function fetchProductById(string $productId): array
     {
         try {
-            $response = Http::withOptions(['verify' => false])
-                ->withHeaders(['Authorization' => 'Bearer ' . env('LIGHTSPEED_ACCESS_TOKEN')])
+            $response = Http::withHeaders(['Authorization' => 'Bearer ' . env('LIGHTSPEED_ACCESS_TOKEN')])
                 ->get("https://nicebackyard.retail.lightspeed.app/api/2.0/products/{$productId}?expand=prices,default_price");
 
             if ($response->successful()) {
