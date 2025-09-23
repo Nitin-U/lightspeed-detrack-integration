@@ -32,7 +32,7 @@ class ManageDetrackJobs extends Controller
             // Decode JSON payload as array
             $payload = $request->json()->all();
 
-            Log::info('NEW >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>', []);
+            Log::info('NEW >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>', ['Date' => now()]);
             Log::info('Initial payload >>>>>', $payload);
 
             //Process base payload into structured bundle
@@ -52,9 +52,8 @@ class ManageDetrackJobs extends Controller
             // Extract attributes from full sale data
             $attributes = $bundle['sale']['data']['attributes'] ?? [];
 
-            if ($this->lightspeedApiService->verifyFulFillmentIsDeliveryType($attributes)) {
+            if ($this->lightspeedApiService->verifyFulFillmentIsDeliveryType($attributes) || ($request['create_job'] && $request->has('create_job'))) {
                 // Build detrack payload safely using bundle data
-
                 $bundle['detrack_payload'] = [
                     'data' => [
                         'do_number'                 => $bundle['sale']['data']['id'], // Sale ID as unique delivery order number
@@ -72,14 +71,14 @@ class ManageDetrackJobs extends Controller
                         'notify_email'              => $bundle['customer']['email'] ?? '',
                         'items'                     => collect($bundle['line_items'] ?? [])->map(function ($item) {
                             return [
-                            'sku'                   => $item['sku'] ?? null,
-                            'description'           => $item['name'] ?? $item['description'] ?? '',
-                            'quantity'              => $item['quantity'] ?? 0
+                                'sku'                   => $item['sku'] ?? null,
+                                'description'           => $item['name'] ?? $item['description'] ?? '',
+                                'quantity'              => $item['quantity'],
+                                'weight'                => $item['weight']
                             ];
                         })->toArray()
                     ]
                 ];
-
 
                 $this->detrackApiService->sendDetrackPayloadData($bundle['detrack_payload'] ?? null);
             }
@@ -101,25 +100,28 @@ class ManageDetrackJobs extends Controller
     {
         DB::beginTransaction();
         try {
+            Log::info('UPDATE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>', ['Date' => now()]);
             // Decode JSON payload as array
             $payload = $request->json()->all();
-
-            Log::info('UPDATED >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>', []);
             Log::info('Initial UPDATE payload >>>>>', $payload);
 
             //Process base payload into structured bundle
-            $bundle = $this->lightspeedApiService->processSalePayload($payload);
+            $bundle = $this->lightspeedApiService->processUpdateSalesPayload($payload);
+            $note   = strtolower($bundle['sale']['note'] ?? '');
+            $status = strtolower($bundle['sale']['status'] ?? '');
 
-            //Always log extracted sale ID
-            Log::info('Lightspeed UPDATED sales id', ['sale_id' => $bundle['sale']['id'] ?? null]);
-            if (!empty($bundle['sale'])) {
-                // Fetch full sale from Lightspeed API
-                $saleId = $bundle['sale']['id'];
-                $bundle['sale'] = $this->lightspeedApiService->fetchSalesDetails($saleId);
+            if (!empty($bundle['sale']) && (str_contains($note, '*cd') || $status == 'voided')){
+                Log::info('Delete conditions for update matched:',['note'=> $note,'status' =>$status]);
+                //if the note contains cancel delivery anywhere or if status is voided then remove the detrack job
+                $this->detrackApiService->deleteDetrackJob($bundle['sale']['id']);
+            }else if(!empty($bundle['sale']) && str_contains($note, '*ud')) {
+                Log::info('Create New Job conditions for update matched:',['note'=> $note,'status' =>$status]);
+                $request->request->add(['create_job' => true]);
+                //if the keyword matches *ud, then create a new job through sale completed function
+                $this->handleSaleCompleted($request);
+            }else{
+                Log::info('Delete/update for new job conditions for update did not match:',['note'=> $note,'status' =>$status]);
             }
-
-            Log::info('updated data::', ['UPDATED sales bundle data' => $bundle]);
-
 
             DB::commit();
         } catch (\Exception $e) {

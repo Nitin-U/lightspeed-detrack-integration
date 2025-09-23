@@ -69,6 +69,10 @@ class LightspeedApiService {
                 $sku = $item['product']['sku'] ?? null;
                 $name = $item['product']['name'] ?? null;
                 $retailPrice = $item['product']['default_price']['amount'] ?? ($item['product']['prices'][0]['amount'] ?? null);
+                $quantity = $item['quantity'] ?? 0;
+                // Separate integer and decimal parts
+                $integerQuantity = floor($quantity);
+                $decimalPart = $quantity - $integerQuantity;
 
                 // Fallback: fetch product details by ID if SKU still null
                 if ((!$sku || !$name || !$retailPrice) && isset($item['product_id'])) {
@@ -84,7 +88,8 @@ class LightspeedApiService {
                     'sku'            => $sku,
                     'name'           => $name,
                     'retail_price'   => $retailPrice,
-                    'quantity'       => $item['quantity'] ?? null,
+                    'quantity'       => $decimalPart > 0 ? null : $quantity,
+                    'weight'         => $decimalPart > 0 ? $quantity : null,
                     'tax_total'      => $item['tax_total'] ?? null,
                     'tax_components' => $item['tax_components'] ?? [],
                     'fulfilment_type'=> $item['fulfilment_type'] ?? null,
@@ -172,5 +177,23 @@ class LightspeedApiService {
 
         return [];
     }
+
+    public function processUpdateSalesPayload($payload): array
+    {
+        $bundle = [];
+        // Extract sale info
+        if (isset($payload['sale'])) {
+            $sale = $payload['sale'];
+            $bundle['sale'] = [
+                'id'                => $sale['id'] ?? null,
+                'status'            => $sale['status'] ?? null,
+                'state'             => $sale['state'] ?? null,
+                'note'              => $sale['note'] ?? null
+            ];
+        }
+
+        return $bundle;
+    }
+
 
 }
