@@ -195,5 +195,34 @@ class LightspeedApiService {
         return $bundle;
     }
 
+    public function fetchFulfillmentDetails($saleId): array
+    {
+        try {
+            $response = Http::withOptions(['verify' => false])
+                ->withHeaders([
+                    'Authorization' => 'Bearer ' . env('LIGHTSPEED_ACCESS_TOKEN'),
+                    'Accept'        => 'application/json',
+                ])
+                ->get("https://nicebackyard.retail.lightspeed.app/api/2.0/fulfillments", [
+                    'sale_id'   => $saleId,
+                    'page_size' => 50,
+                ]);
+
+            if ($response->successful()) {
+                $data = $response->json() ?? [];
+                Log::info("Fulfillment details for sale {$saleId}", $data);
+                return $data;
+            }
+
+            Log::error("Failed to fetch fulfillment details for sale {$saleId}", [
+                'status' => $response->status(),
+                'body'   => $response->body(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error("Exception fetching fulfillment details for sale {$saleId}: " . $e->getMessage());
+        }
+
+        return [];
+    }
 
 }

@@ -45,9 +45,66 @@ class ManageDetrackJobs extends Controller
                 // Fetch full sale from Lightspeed API
                 $saleId = $bundle['sale']['id'];
                 $bundle['sale'] = $this->lightspeedApiService->fetchSalesDetails($saleId);
+                $bundle['fulfillments'] = $this->lightspeedApiService->fetchFulfillmentDetails($saleId);
             }
 
             Log::info('updated data::', ['updated bundle data' => $bundle]);
+
+            // Try to extract delivery date from fulfillment note
+            $fulfillmentNote = $bundle['fulfillments']['data'][0]['note'] ?? null;
+
+            $bundle['delivery_date'] = null;
+
+            // if (!empty($fulfillmentNote)) {
+            //     $note = trim($fulfillmentNote);
+
+            //     // Match YYYY-MM-DD or DD/MM/YYYY or YYYY/MM/DD
+            //     if (preg_match('/(\d{4}-\d{2}-\d{2})|(\d{2}\/\d{2}\/\d{4})|(\d{4}\/\d{2}\/\d{2})/', $note, $matches)) {
+            //         $dateStr = $matches[0];
+
+            //         // Convert DD/MM/YYYY to YYYY-MM-DD
+            //         if (strpos($dateStr, '/') !== false && substr_count($dateStr, '/') == 2) {
+            //             [$d, $m, $y] = explode('/', $dateStr);
+            //             if (strlen($y) == 4 && strlen($d) == 2) {
+            //                 $dateStr = "$y-$m-$d";
+            //             }
+            //         }
+
+            //         $bundle['delivery_date'] = $dateStr;
+            //     }
+            // }
+
+            // Try to extract delivery date from fulfillment note
+            $fulfillmentNote = $bundle['fulfillments']['data'][0]['note'] ?? null;
+            $bundle['delivery_date'] = null;
+
+            if (!empty($fulfillmentNote)) {
+                $note = trim($fulfillmentNote);
+
+                // Match YYYY-MM-DD, DD/MM/YYYY, YYYY/MM/DD, DD-MM-YYYY
+                if (preg_match('/(\d{4}-\d{2}-\d{2})|(\d{2}\/\d{2}\/\d{4})|(\d{4}\/\d{2}\/\d{2})|(\d{2}-\d{2}-\d{4})/', $note, $matches)) {
+                    $dateStr = $matches[0];
+
+                    // Convert DD/MM/YYYY → YYYY-MM-DD
+                    if (strpos($dateStr, '/') !== false && substr_count($dateStr, '/') === 2) {
+                        [$d, $m, $y] = explode('/', $dateStr);
+                        $dateStr = "$y-$m-$d";
+                    }
+
+                    // Convert DD-MM-YYYY → YYYY-MM-DD
+                    if (strpos($dateStr, '-') !== false && substr_count($dateStr, '-') === 2 && strlen(explode('-', $dateStr)[0]) === 2) {
+                        [$d, $m, $y] = explode('-', $dateStr);
+                        $dateStr = "$y-$m-$d";
+                    }
+
+                    $bundle['delivery_date'] = $dateStr;
+                }
+            }
+
+            // If no date was found in the note, set today's date
+            if ($bundle['delivery_date'] === null) {
+                $bundle['delivery_date'] = now()->toDateString();
+            }
 
             // Extract attributes from full sale data
             $attributes = $bundle['sale']['data']['attributes'] ?? [];
@@ -57,7 +114,7 @@ class ManageDetrackJobs extends Controller
                 $bundle['detrack_payload'] = [
                     'data' => [
                         'do_number'                 => $bundle['sale']['data']['id'], // Sale ID as unique delivery order number
-                        'date'                      => now()->format('Y-m-d'),
+                        'date'                      => $bundle['delivery_date'],
                         'type'                      => 'Delivery',
                         'address'                   => $bundle['customer']['address'] ?? 'Not Set',
                         'phone_number'              => $bundle['customer']['phone'] ?: ($bundle['customer']['mobile'] ?: null),
@@ -95,7 +152,7 @@ class ManageDetrackJobs extends Controller
 
         return response()->json(['status' => 'ok']);
     }
-
+    
     public function handleSaleUpdated(Request $request)
     {
         DB::beginTransaction();
