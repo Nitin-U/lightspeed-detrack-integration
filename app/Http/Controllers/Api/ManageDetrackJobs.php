@@ -55,25 +55,6 @@ class ManageDetrackJobs extends Controller
 
             $bundle['delivery_date'] = null;
 
-            // if (!empty($fulfillmentNote)) {
-            //     $note = trim($fulfillmentNote);
-
-            //     // Match YYYY-MM-DD or DD/MM/YYYY or YYYY/MM/DD
-            //     if (preg_match('/(\d{4}-\d{2}-\d{2})|(\d{2}\/\d{2}\/\d{4})|(\d{4}\/\d{2}\/\d{2})/', $note, $matches)) {
-            //         $dateStr = $matches[0];
-
-            //         // Convert DD/MM/YYYY to YYYY-MM-DD
-            //         if (strpos($dateStr, '/') !== false && substr_count($dateStr, '/') == 2) {
-            //             [$d, $m, $y] = explode('/', $dateStr);
-            //             if (strlen($y) == 4 && strlen($d) == 2) {
-            //                 $dateStr = "$y-$m-$d";
-            //             }
-            //         }
-
-            //         $bundle['delivery_date'] = $dateStr;
-            //     }
-            // }
-
             // Try to extract delivery date from fulfillment note
             $fulfillmentNote = $bundle['fulfillments']['data'][0]['note'] ?? null;
             $bundle['delivery_date'] = null;
@@ -81,9 +62,10 @@ class ManageDetrackJobs extends Controller
             if (!empty($fulfillmentNote)) {
                 $note = trim($fulfillmentNote);
 
-                // Match YYYY-MM-DD, DD/MM/YYYY, YYYY/MM/DD, DD-MM-YYYY
+                // Match date (YYYY-MM-DD, DD/MM/YYYY, YYYY/MM/DD, DD-MM-YYYY)
                 if (preg_match('/(\d{4}-\d{2}-\d{2})|(\d{2}\/\d{2}\/\d{4})|(\d{4}\/\d{2}\/\d{2})|(\d{2}-\d{2}-\d{4})/', $note, $matches)) {
                     $dateStr = $matches[0];
+                    $afterDateText = trim(str_replace($dateStr, '', $note)); // 🟢 everything after the date
 
                     // Convert DD/MM/YYYY → YYYY-MM-DD
                     if (strpos($dateStr, '/') !== false && substr_count($dateStr, '/') === 2) {
@@ -98,6 +80,11 @@ class ManageDetrackJobs extends Controller
                     }
 
                     $bundle['delivery_date'] = $dateStr;
+
+                    // Map remaining text to address if provided
+                    if (!empty($afterDateText)) {
+                        $bundle['address_from_note'] = $afterDateText;
+                    }
                 }
             }
 
@@ -110,13 +97,29 @@ class ManageDetrackJobs extends Controller
             $attributes = $bundle['sale']['data']['attributes'] ?? [];
 
             if ($this->lightspeedApiService->verifyFulFillmentIsDeliveryType($attributes) || ($request['create_job'] && $request->has('create_job'))) {
+
+                /** Map per-item comments from sale.data.line_items */
+                $lineItems = collect($bundle['line_items'] ?? []);
+                $saleLineItems = collect(data_get($bundle, 'sale.data.line_items', []));
+
+                $items = $lineItems->map(function ($item) use ($saleLineItems) {
+                    $saleItem = $saleLineItems->firstWhere('id', $item['id']);
+                    return [
+                        'sku'         => $item['sku'] ?? null,
+                        'description' => $item['name'] ?? $item['description'] ?? '',
+                        'quantity'    => $item['quantity'] ?? null,
+                        'weight'      => $item['weight'] ?? null,
+                        'comments'    => $saleItem['note'] ?? null, // ✅ Item-level note mapping
+                    ];
+                })->toArray();
+
                 // Build detrack payload safely using bundle data
                 $bundle['detrack_payload'] = [
                     'data' => [
                         'do_number'                 => $bundle['sale']['data']['id'], // Sale ID as unique delivery order number
                         'date'                      => $bundle['delivery_date'],
                         'type'                      => 'Delivery',
-                        'address'                   => $bundle['customer']['address'] ?? 'Not Set',
+                        'address'                   => $bundle['address_from_note'] ?? ($bundle['customer']['address'] ?? 'Not Set'),
                         'phone_number'              => $bundle['customer']['phone'] ?: ($bundle['customer']['mobile'] ?: null),
                         'instructions'              => $bundle['sale']['data']['note'] ?? null,
                         'company_name'              => $bundle['customer']['company_name'] ?? null,
@@ -126,14 +129,7 @@ class ManageDetrackJobs extends Controller
                         'total_price'               => $bundle['sale']['data']['total_price_incl'] ?? '',
                         'invoice_number'            => $bundle['sale']['data']['invoice_number'] ?? '',
                         'notify_email'              => $bundle['customer']['email'] ?? '',
-                        'items'                     => collect($bundle['line_items'] ?? [])->map(function ($item) {
-                            return [
-                                'sku'                   => $item['sku'] ?? null,
-                                'description'           => $item['name'] ?? $item['description'] ?? '',
-                                'quantity'              => $item['quantity'],
-                                'weight'                => $item['weight']
-                            ];
-                        })->toArray()
+                        'items'                     => $items,
                     ]
                 ];
 
