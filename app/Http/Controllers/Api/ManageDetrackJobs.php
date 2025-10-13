@@ -65,7 +65,7 @@ class ManageDetrackJobs extends Controller
                 // Match date (YYYY-MM-DD, DD/MM/YYYY, YYYY/MM/DD, DD-MM-YYYY)
                 if (preg_match('/(\d{4}-\d{2}-\d{2})|(\d{2}\/\d{2}\/\d{4})|(\d{4}\/\d{2}\/\d{2})|(\d{2}-\d{2}-\d{4})/', $note, $matches)) {
                     $dateStr = $matches[0];
-                    $afterDateText = trim(str_replace($dateStr, '', $note)); // 🟢 everything after the date
+                    $afterDateText = trim(str_replace($dateStr, '', $note));
 
                     // Convert DD/MM/YYYY → YYYY-MM-DD
                     if (strpos($dateStr, '/') !== false && substr_count($dateStr, '/') === 2) {
@@ -109,7 +109,7 @@ class ManageDetrackJobs extends Controller
                         'description' => $item['name'] ?? $item['description'] ?? '',
                         'quantity'    => $item['quantity'] ?? null,
                         'weight'      => $item['weight'] ?? null,
-                        'comments'    => $saleItem['note'] ?? null, // ✅ Item-level note mapping
+                        'comments'    => $saleItem['note'] ?? null,
                     ];
                 })->toArray();
 
@@ -119,7 +119,8 @@ class ManageDetrackJobs extends Controller
                         'do_number'                 => $bundle['sale']['data']['id'], // Sale ID as unique delivery order number
                         'date'                      => $bundle['delivery_date'],
                         'type'                      => 'Delivery',
-                        'address'                   => $bundle['address_from_note'] ?? ($bundle['customer']['address'] ?? 'Not Set'),
+                        // 'address'                   => $bundle['address_from_note'] ?? ($bundle['customer']['address'] ?? 'Not Set'),
+                        'address'                   => $bundle['address_from_note'] ?? 'Not Set',
                         'phone_number'              => $bundle['customer']['phone'] ?: ($bundle['customer']['mobile'] ?: null),
                         'instructions'              => $bundle['sale']['data']['note'] ?? null,
                         'company_name'              => $bundle['customer']['company_name'] ?? null,
