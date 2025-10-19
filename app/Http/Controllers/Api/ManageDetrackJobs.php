@@ -52,12 +52,8 @@ class ManageDetrackJobs extends Controller
 
             // Try to extract delivery date from fulfillment note
             $fulfillmentNote = $bundle['fulfillments']['data'][0]['note'] ?? null;
-
             $bundle['delivery_date'] = null;
-
-            // Try to extract delivery date from fulfillment note
-            $fulfillmentNote = $bundle['fulfillments']['data'][0]['note'] ?? null;
-            $bundle['delivery_date'] = null;
+            $bundle['address_from_note'] = null;
 
             if (!empty($fulfillmentNote)) {
                 $note = trim($fulfillmentNote);
@@ -81,14 +77,18 @@ class ManageDetrackJobs extends Controller
 
                     $bundle['delivery_date'] = $dateStr;
 
-                    // Map remaining text to address if provided
                     if (!empty($afterDateText)) {
                         $bundle['address_from_note'] = $afterDateText;
+                    }
+                } else {
+                    // No valid date found, but check if there's some text we can use as address
+                    if (!empty($note)) {
+                        $bundle['address_from_note'] = $note;
                     }
                 }
             }
 
-            // If no date was found in the note, set today's date
+            // If no date was found, set today's date
             if ($bundle['delivery_date'] === null) {
                 $bundle['delivery_date'] = now()->toDateString();
             }
