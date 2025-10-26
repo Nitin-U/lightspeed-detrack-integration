@@ -54,6 +54,7 @@ class ManageDetrackJobs extends Controller
             $fulfillmentNote = $bundle['fulfillments']['data'][0]['note'] ?? null;
             $bundle['delivery_date'] = null;
             $bundle['address_from_note'] = null;
+            $bundle['delivery_time'] = null;
 
             if (!empty($fulfillmentNote)) {
                 $note = trim($fulfillmentNote);
@@ -77,13 +78,28 @@ class ManageDetrackJobs extends Controller
 
                     $bundle['delivery_date'] = $dateStr;
 
+                    // Match time or time range: e.g. @10:00, @10:00 AM, @10:00-15:00, @10:00 AM-03:00 PM
+                    if (preg_match('/@?\s*(\d{1,2}:\d{2}\s?(AM|PM|am|pm)?(\s*-\s*\d{1,2}:\d{2}\s?(AM|PM|am|pm)?)?)/', $afterDateText, $timeMatches)) {
+                        $timeStr = trim(str_replace('@', '', $timeMatches[1]));
+                        $bundle['delivery_time'] = $timeStr;
+
+                        // Remove time (including ranges) from address text
+                        $afterDateText = trim(str_replace($timeMatches[0], '', $afterDateText));
+                    }
+
+                    // Whatever remains after date/time is address
                     if (!empty($afterDateText)) {
                         $bundle['address_from_note'] = $afterDateText;
                     }
                 } else {
                     // No valid date found, but check if there's some text we can use as address
                     if (!empty($note)) {
-                        $bundle['address_from_note'] = $note;
+                        // Try to extract only time if present
+                        if (preg_match('/@?\s*(\d{1,2}:\d{2}\s?(AM|PM|am|pm)?)/', $note, $timeMatches)) {
+                            $bundle['delivery_time'] = trim(str_replace('@', '', $timeMatches[1]));
+                            $note = trim(str_replace($timeMatches[0], '', $note));
+                        }
+                        $bundle['address_from_note'] = trim($note);
                     }
                 }
             }
@@ -118,6 +134,7 @@ class ManageDetrackJobs extends Controller
                     'data' => [
                         'do_number'                 => $bundle['sale']['data']['id'], // Sale ID as unique delivery order number
                         'date'                      => $bundle['delivery_date'],
+                        'job_time'                  => $bundle['delivery_time'] ?? null,
                         'type'                      => 'Delivery',
                         // 'address'                   => $bundle['address_from_note'] ?? ($bundle['customer']['address'] ?? 'Not Set'),
                         'address'                   => $bundle['address_from_note'] ?? 'Not Set',
