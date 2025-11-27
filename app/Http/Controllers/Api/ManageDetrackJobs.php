@@ -50,10 +50,9 @@ class ManageDetrackJobs extends Controller
 
             Log::info('updated data::', ['updated bundle data' => $bundle]);
 
-            // Try to extract delivery date from fulfillment note
+            // Try to extract delivery date/time from fulfillment note (only Date @Time now)
             $fulfillmentNote = $bundle['fulfillments']['data'][0]['note'] ?? null;
             $bundle['delivery_date'] = null;
-            $bundle['address_from_note'] = null;
             $bundle['delivery_time'] = null;
 
             if (!empty($fulfillmentNote)) {
@@ -78,28 +77,15 @@ class ManageDetrackJobs extends Controller
 
                     $bundle['delivery_date'] = $dateStr;
 
-                    // Match time or time range: e.g. @10:00, @10:00 AM, @10:00-15:00, @10:00 AM-03:00 PM
+                    // Match time or time range: e.g. @10:00, @10:00-15:00
                     if (preg_match('/@?\s*(\d{1,2}:\d{2}\s?(AM|PM|am|pm)?(\s*-\s*\d{1,2}:\d{2}\s?(AM|PM|am|pm)?)?)/', $afterDateText, $timeMatches)) {
                         $timeStr = trim(str_replace('@', '', $timeMatches[1]));
                         $bundle['delivery_time'] = $timeStr;
-
-                        // Remove time (including ranges) from address text
-                        $afterDateText = trim(str_replace($timeMatches[0], '', $afterDateText));
-                    }
-
-                    // Whatever remains after date/time is address
-                    if (!empty($afterDateText)) {
-                        $bundle['address_from_note'] = $afterDateText;
                     }
                 } else {
-                    // No valid date found, but check if there's some text we can use as address
-                    if (!empty($note)) {
-                        // Try to extract only time if present
-                        if (preg_match('/@?\s*(\d{1,2}:\d{2}\s?(AM|PM|am|pm)?)/', $note, $timeMatches)) {
-                            $bundle['delivery_time'] = trim(str_replace('@', '', $timeMatches[1]));
-                            $note = trim(str_replace($timeMatches[0], '', $note));
-                        }
-                        $bundle['address_from_note'] = trim($note);
+                    // No valid date found, but check if there's a time
+                    if (preg_match('/@?\s*(\d{1,2}:\d{2}\s?(AM|PM|am|pm)?)/', $note, $timeMatches)) {
+                        $bundle['delivery_time'] = trim(str_replace('@', '', $timeMatches[1]));
                     }
                 }
             }
@@ -129,25 +115,34 @@ class ManageDetrackJobs extends Controller
                     ];
                 })->toArray();
 
-                // Build detrack payload safely using bundle data
+                // Build instructions from line item notes
+                $instructionLines = [];
+                foreach ($items as $itm) {
+                    if (!empty($itm['comments'])) {
+                        $instructionLines[] = $itm['comments'];
+                    }
+                }
+                $instructions = implode("\n", $instructionLines);
+
+                // Detrack payload
                 $bundle['detrack_payload'] = [
                     'data' => [
-                        'do_number'                 => $bundle['sale']['data']['id'], // Sale ID as unique delivery order number
-                        'date'                      => $bundle['delivery_date'],
-                        'job_time'                  => $bundle['delivery_time'] ?? null,
-                        'type'                      => 'Delivery',
-                        // 'address'                   => $bundle['address_from_note'] ?? ($bundle['customer']['address'] ?? 'Not Set'),
-                        'address'                   => $bundle['address_from_note'] ?? 'Not Set',
-                        'phone_number'              => $bundle['customer']['phone'] ?: ($bundle['customer']['mobile'] ?: null),
-                        'instructions'              => $bundle['sale']['data']['note'] ?? null,
-                        'company_name'              => $bundle['customer']['company_name'] ?? null,
-                        'postal_code'               => $bundle['customer']['postal_code'] ?? null,
-                        'customer'                  => ($bundle['customer']['first_name'] ?? '') . ' ' . ($bundle['customer']['last_name'] ?? ''),
-                        'job_price'                 => $bundle['sale']['data']['total_price'] ?? '',
-                        'total_price'               => $bundle['sale']['data']['total_price_incl'] ?? '',
-                        'invoice_number'            => $bundle['sale']['data']['invoice_number'] ?? '',
-                        'notify_email'              => $bundle['customer']['email'] ?? '',
-                        'items'                     => $items,
+                        'do_number'      => $bundle['sale']['data']['id'], // Sale ID as unique delivery order number
+                        'date'           => $bundle['delivery_date'],
+                        'job_time'       => $bundle['delivery_time'] ?? null,
+                        'type'           => 'Delivery',
+                        // 'address'        => $bundle['sale']['data']['note'] ?? 'Not Set',
+                        'address' => !empty($bundle['sale']['data']['note']) ? $bundle['sale']['data']['note'] : 'Not Set',
+                        'phone_number'   => $bundle['customer']['phone'] ?: ($bundle['customer']['mobile'] ?: null),
+                        'instructions'   => $instructions, // concatenated line item notes
+                        'company_name'   => $bundle['customer']['company_name'] ?? null,
+                        'postal_code'    => $bundle['customer']['postal_code'] ?? null,
+                        'customer'       => ($bundle['customer']['first_name'] ?? '') . ' ' . ($bundle['customer']['last_name'] ?? ''),
+                        'job_price'      => $bundle['sale']['data']['total_price'] ?? '',
+                        'total_price'    => $bundle['sale']['data']['total_price_incl'] ?? '',
+                        'invoice_number' => $bundle['sale']['data']['invoice_number'] ?? '',
+                        'notify_email'   => $bundle['customer']['email'] ?? '',
+                        'items'          => $items,
                     ]
                 ];
 
@@ -185,7 +180,7 @@ class ManageDetrackJobs extends Controller
                 Log::info('Delete conditions for update matched:',['note'=> $note,'status' =>$status]);
                 //if the note contains cancel delivery anywhere or if status is voided then remove the detrack job
                 $this->detrackApiService->deleteDetrackJob($bundle['sale']['id']);
-            }else if(!empty($bundle['sale']) && str_contains($note, '*ud')) {
+            }else if(!empty($bundle['sale']) && str_contains($note, '*ud') && $status != 'onaccount_closed') {
                 Log::info('Create New Job conditions for update matched:',['note'=> $note,'status' =>$status]);
                 $request->request->add(['create_job' => true]);
                 //if the keyword matches *ud, then create a new job through sale completed function
